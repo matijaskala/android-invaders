@@ -1,0 +1,319 @@
+<html>
+<head>
+	<style>
+		* { padding: 0; margin: 0; }
+		canvas { background: #222; display: block; margin: 0 auto; }
+	</style>
+	<title>Android Invaders</title>
+</head>
+<body>
+	<canvas id="myC" width="800" height="600"></canvas>
+	<div id="a"></div>
+	<script>
+var M = {
+	image: function(p) {
+		var ret = new Image();
+		ret.src = "data/images/" + p;
+		return ret;
+	}
+};
+var tmpobj = null;
+var V = [];
+var Enemies = [];
+var Behaviour = {
+	NONE: 0,
+	STAY_ON_SCREEN: 1,
+	DIE_WHEN_OUT: 2,
+	NEVER_BE_OUT: 3,
+	STOP_AT_EDGE: 4,
+	CIRCLE: 5,
+};
+class Sprite {
+	constructor() {
+		this.behaviour = Behaviour.NONE;
+		this.velocity = {x: 0, y: 0};
+		this.hitpoints = 1;
+		this.rotateBy = 0;
+		V.push(this);
+	}
+	hurt() {
+		if (this.hitpoints > 0)
+			this.hitpoints--;
+	}
+	dead() {
+		return this.hitpoints <= 0;
+	}
+	kill() {
+		this.hitpoints = 0;
+	}
+	agony() {}
+	intersects(o) {
+		var w2 = this.image.width/2 + o.image.width/2;
+		var h2 = this.image.height/2 + o.image.height/2;
+		if (this.position.x >= o.position.x + w2 -2 || this.position.y >= o.position.y + h2 -2
+		 || o.position.x >= this.position.x + w2 -2 || o.position.y >= this.position.y + h2 -2)
+			return false;
+		return true; // TODO implement pixel collision
+	}
+	loop() {
+		if (this.dead()) {
+			this.agony();
+			V.splice(V.indexOf(this), 1);
+			return;
+		}
+		switch (this.behaviour) {
+			case Behaviour.STAY_ON_SCREEN:
+					if (this.velocity.x < 0 ? this.position.x<=this.image.width/2 : this.position.x>=canvas.width-this.image.width/2)
+						this.velocity.x *= -1;
+					if (this.velocity.y < 0 ? this.position.y<=this.image.width/2 : this.position.y>=canvas.height-this.image.height/2)
+						this.velocity.y *= -1;
+				break;
+			case Behaviour.DIE_WHEN_OUT:
+					;
+				break;
+			case Behaviour.NEVER_BE_OUT:
+					if ((this.velocity.x != 0 && (this.velocity.x < 0 ? this.position.x<-this.image.width/2 : this.position.x>canvas.width+this.image.width/2))
+					|| (this.velocity.y != 0 && (this.velocity.y < 0 ? this.position.y<-this.image.height/2 : this.position.y>canvas.height+this.image.height/2)))
+						this.kill();
+				break;
+			case Behaviour.STOP_AT_EDGE:
+					if (this.position.x < this.image.width/2 - this.velocity.x/16)
+						this.position.x = this.image.width/2 - this.velocity.x/16;
+					else if (this.position.x > canvas.width-this.image.width/2 - this.velocity.x/16)
+						this.position.x = canvas.width-this.image.width/2 - this.velocity.x/16;
+					if (this.position.y < this.image.height/2 - this.velocity.y/16)
+						this.position.y = this.image.height/2 - this.velocity.y/16;
+					else if (this.position.y > canvas.height-this.image.height/2 - this.velocity.y/16)
+						this.position.y = canvas.height-this.image.height/2 - this.velocity.y/16;
+				break;
+			case Behaviour.CIRCLE:
+				break;
+		}
+		this.position.x += this.velocity.x / 16.0;
+		this.position.y += this.velocity.y / 16.0;
+	}
+}
+class Spike extends Sprite {
+	loop() {
+		super.loop();
+		if (this.intersects(raketa) && !this.dead() && !raketa.dead())
+			raketa.hurt();
+	}
+}
+class Enemy extends Sprite {
+	constructor() {
+		super();
+		Enemies.push(this);
+	}
+	agony() {
+		Enemies.splice(Enemies.indexOf(this), 1);
+		if (raketa != null) {
+			score += 20;
+			if (Enemies.length == 0)
+				setTimeout('enemiesDefeated();', 200);
+		}
+	}
+	loop() {
+		super.loop();
+		if (this.intersects(raketa) && !this.dead() && !raketa.dead())
+			raketa.hurt();
+	}
+}
+class Metek extends Sprite {
+	constructor(o) {
+		super();
+		this.velocity = {x: o.direction.x, y: o.direction.y};
+		this.direction = {x: o.direction.x, y: o.direction.y};
+		this.position = {x: o.position.x, y: o.position.y};
+		this.behaviour = Behaviour.NEVER_BE_OUT;
+		this.image = M.image("energybeam-n.png");
+		V.push(this);
+	}
+	loop() {
+		super.loop();
+		tmpobj = this;
+		Enemies.forEach(function (o) { if (tmpobj.intersects(o) && !tmpobj.dead() && !o.dead()) { o.hurt(); tmpobj.hurt(); } });
+		tmpobj = null;
+	}
+}
+class Raketa extends Sprite {
+	constructor() {
+		super();
+		this.image = M.image("raketa-apple.png");
+		this.behaviour = Behaviour.STOP_AT_EDGE;
+		this.value = 0;
+		this.pickups = 0;
+		this.direction = {x: 0, y: -50};
+		this.position = {x: canvas.width/2, y: canvas.height};
+		this.side = 1;
+		this.fire = false;
+	}
+	agony() {
+		V.forEach(function(o) { o.kill(); });
+		raketa = null;
+		setTimeout('score = 0; raketa = new Raketa(); level1();', 2000);
+	}
+	loop() {
+		if (leftArrowPressed != rightArrowPressed || upArrowPressed != downArrowPressed) {
+			var control = {x: 0.0, y: 0.0};
+			if (leftArrowPressed && !rightArrowPressed)
+				control.x = -50;
+			if (!leftArrowPressed && rightArrowPressed)
+				control.x = 50;
+			if (upArrowPressed && !downArrowPressed)
+				control.y = -50;
+			if (!upArrowPressed && downArrowPressed)
+				control.y = 50;
+			if ((this.velocity.x > control.x && control.x >= 0) || (this.velocity.x < control.x && control.x <= 0)) {
+				if (this.velocity.x > 2)
+					this.velocity.x -= 4;
+				else if (this.velocity.x < -2)
+					this.velocity.x += 4;
+				else
+					this.velocity.x = 0;
+			}
+			if ((this.velocity.y > control.y && control.y >= 0) || (this.velocity.y < control.y && control.y <= 0)) {
+				if (this.velocity.y > 2)
+					this.velocity.y -= 4;
+				else if (this.velocity.y < -2)
+					this.velocity.y += 4;
+				else
+					this.velocity.y = 0;
+			}
+			var control_abs = Math.sqrt(control.x*control.x + control.y*control.y)/50.0;
+			var accell = {x: control.x/control_abs, y: control.y/control_abs};
+			this.velocity.x += accell.x;
+			this.velocity.y += accell.y;
+			if (leftArrowPressed != rightArrowPressed) {
+				if (control.x > 0 ? this.velocity.x > control.x : this.velocity.x < control.x)
+					this.velocity.x = control.x;
+				else if (accell.x >= 0 && this.velocity.x <= 0 || accell.x <= 0 && this.velocity.x >= 0)
+					this.velocity.x += accell.x;
+			}
+			if (downArrowPressed != upArrowPressed) {
+				if (control.y > 0 ? this.velocity.y > control.y : this.velocity.y < control.y)
+					this.velocity.y = control.y;
+				else if (accell.y >= 0 && this.velocity.y <= 0 || accell.y <= 0 && this.velocity.y >= 0)
+					this.velocity.y += accell.y;
+			}
+		}
+		else {
+			var speed = Math.sqrt(this.velocity.x*this.velocity.x + this.velocity.y*this.velocity.y);
+			this.velocity.x = speed > 2 ? (speed-2) / speed : 0;
+			this.velocity.y = speed > 2 ? (speed-2) / speed : 0;
+		}
+		super.loop();
+		if (this.fire) {
+			new Metek(this);
+			this.fire = false;
+		}
+	}
+}
+class Drone extends Enemy {
+	constructor() {
+		super();
+		this.image = M.image("android.png");
+	}
+	loop() {
+		super.loop();
+		if (Math.random() < 0.000012*(levelCount+4)) {
+			var z = new Spike();
+			z.image = M.image("energy-shock.png");
+			z.behaviour = Behaviour.NEVER_BE_OUT;
+			z.velocity.x = (Math.random() - 0.5)/1.4 + this.velocity.x/2.7;
+			z.position = {x: this.position.x, y: this.position.y};
+			z.velocity.y = 10;
+			z.rotateBy = Math.PI;
+		}
+	}
+}
+class Drone1 extends Drone {
+	constructor(x, y) {
+		super();
+		this.behaviour = Behaviour.NONE;
+		this.position = {x: x, y: y};
+		this.velocity.x = 10;
+	}
+	loop() {
+		if (this.velocity.x < 0 ? this.position.x<=this.image.width/2 : this.velocity.x>0 && this.position.x>=canvas.width-this.image.width/2)
+			needReverse = true;
+		super.loop();
+	}
+}
+function level1() {
+	needReverse = false;
+	var i = 0;
+	while (i < 12) {
+		var j = 0;
+		while (j < 4) {
+			new Drone1(150 + 48*i, 80 + 60*j);
+			j++;
+		}
+		i++;
+	}
+}
+var div = document.getElementById("a");
+var canvas = document.getElementById("myC");
+var ctx = canvas.getContext("2d");
+ctx.font = "16px DejaVu Sans";
+var raketa = new Raketa();
+var score = 0;
+var spacePressed = false;
+var upArrowPressed = false;
+var downArrowPressed = false;
+var leftArrowPressed = false;
+var rightArrowPressed = false;
+var levelCount = 1;
+setInterval(draw, 10);
+var needReverse = false;
+level1();
+document.addEventListener("keyup", keyUpHandler, false);
+document.addEventListener("keydown", keyDownHandler, false);
+function keyUpHandler(e) {
+	switch(e.keyCode) {
+		case 32: spacePressed = false; break;
+		case 37: leftArrowPressed = false; break;
+		case 38: upArrowPressed = false; break;
+		case 39: rightArrowPressed = false; break;
+		case 40: downArrowPressed = false; break;
+	}
+}
+function keyDownHandler(e) {
+	switch(e.keyCode) {
+		case 32: spacePressed = true; break;
+		case 37: leftArrowPressed = true; break;
+		case 38: upArrowPressed = true; break;
+		case 39: rightArrowPressed = true; break;
+		case 40: downArrowPressed = true; break;
+	}
+}
+function draw() {
+	ctx.clearRect(0, 0, canvas.width, canvas.height);
+	ctx.fillStyle = "#fff";
+	ctx.fillText("Score: " + score, 8, 20);
+	V.forEach(function(o) { o.loop(); });
+	V.forEach(function(o) {
+		ctx.translate(o.position.x, o.position.y);
+		ctx.rotate(o.rotateBy);
+		ctx.drawImage(o.image, -o.image.width/2, -o.image.height/2);
+		ctx.rotate(-o.rotateBy);
+		ctx.translate(-o.position.x, -o.position.y);
+	});
+	if (needReverse) {
+		Enemies.forEach(function (o) { o.velocity.x *= -1; });
+		needReverse = false;
+	}
+	if (spacePressed && !prevSpacePressed) {
+		raketa.fire = true;
+		prevSpacePressed = true;
+	}
+	if (!spacePressed)
+		prevSpacePressed = false;
+}
+function enemiesDefeated() {
+	level1();
+	levelCount++;
+}
+	</script>
+</body>
+</html>
